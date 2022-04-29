@@ -13,3 +13,30 @@ if __name__ == '__main__':
         time.sleep(0.05)
         # arduino_input = ser.readline().decode('ascii').rstrip()
         # print(arduino_input)
+
+
+import serial
+import time
+
+
+if __name__ == '__main__':
+    ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+    ser.reset_input_buffer()
+
+    try:
+        while 1:
+            # read the serial port
+            try:
+                val = ser.readline().decode('utf=8')
+                print
+                val
+            except SerialException:
+                sleep(0.05)  # Maybe don't do this, or mess around with the interval
+                continue
+
+    while True:
+        integer = '1'
+        ser.write(bytes(integer, 'ascii'))
+        time.sleep(0.05)
+        # arduino_input = ser.readline().decode('ascii').rstrip()
+        # print(arduino_input)
