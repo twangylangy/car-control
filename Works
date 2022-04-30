@@ -21,3 +21,54 @@ if __name__ == '__main__':
             split = arduino_input.split()
             print(split)
 
+
+
+
+
+
+// C++ code
+//
+/*
+  This program blinks pin 13 of the Arduino (the
+  built-in LED) when told to in the serial console
+*/
+String input;
+int Output = 0;
+int Output2 = 0;
+int Output3 = 0;
+
+void setup()
+{
+  Serial.begin (9600);
+  pinMode(13, OUTPUT);
+  delay(10);
+}
+
+void loop()
+{
+  if (Serial.available() > 0) {
+  input = Serial.readStringUntil('\n');
+  input.trim();
+  
+  }
+  if (input == "1") {
+    digitalWrite(13, HIGH);
+  }
+  if (input == "2") {
+    digitalWrite(13, LOW);
+  }
+  //Serial.print(input);
+  
+  
+  Output = random(0, 10000);
+  Serial.print(Output, HEX);
+  Serial.print(" ");
+  Output2 = random(0, 10000);
+  Serial.print(Output2, HEX);
+  Serial.print(" ");
+  Output3 = random(0, 10000);
+  Serial.print(Output3, HEX);
+  Serial.print(" ");
+  Serial.println();
+  delay(1000);
+}
