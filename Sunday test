@@ -1,0 +1,85 @@
+// C++ code
+//
+/*
+  This program blinks pin 13 of the Arduino (the
+  built-in LED) when told to in the serial console
+*/
+
+String input1;
+String input2;
+int Output = 0;
+int Output2 = 0;
+int Output3 = 0;
+
+//New
+String input_string;
+
+
+void setup()
+{
+  Serial.begin (9600);
+  pinMode(13, OUTPUT);
+  delay(100);
+}
+
+void loop()
+{
+  if (Serial.available() > 0) {
+  	//input_string = Serial.readString();
+    input_string = Serial.readStringUntil('\n');
+    input_string.trim();
+    decode();
+  }
+  
+  if (input2 == "1") {
+    digitalWrite(13, HIGH);
+  }
+  if (input2 == "2") {
+    digitalWrite(13, LOW);
+  }
+  //Serial.print(input);
+  
+  
+  Output = random(0, 10000);
+  Serial.print(Output);
+  Serial.print(" ");
+  Output2 = random(0, 10000);
+  Serial.print(Output2);
+  Serial.print(" ");
+  Output3 = random(0, 10000);
+  Serial.print(Output3);
+  Serial.print(" ");
+  Serial.println();
+  delay(500);
+}
+
+void decode ()
+{
+  String strs[20];
+int StringCount = 0;
+  while (input_string.length() > 0)
+  {
+    int index = input_string.indexOf(' ');
+    if (index == -1) // Space not detected
+    {
+      strs[StringCount++] = input_string;
+      break;
+    }
+    else
+    {
+      strs[StringCount++] = input_string.substring(0, index);
+      input_string = input_string.substring(index+1);
+    }
+  }
+
+  //Sets inputs
+  input1 = strs[0];
+  input2 = strs[1];
+  Serial.print(input1);
+  Serial.print(" ");
+  Serial.print(input2);
+  Serial.print(" ");
+
+
+}
+
