@@ -235,11 +235,13 @@ if __name__ == '__main__':
                         fuzz_m_output = fuzzy_motor.output['fuzz_m_response']
                         string_output_2 = str(fuzz_m_output)
             except AttributeError:
-                combined_image = frame
                 string_output_1 = '1'
                 string_output_2 = '3000'  # change later
-                
-            cv2.imshow('result', combined_image)
+            
+            try:    
+                cv2.imshow('result', combined_image)
+            except NameError:
+                cv2.imshow('result', frame)
 
             # Raspberry Pi --> Arduino
             string = ''.join((string_output_1, ' ', string_output_2))
