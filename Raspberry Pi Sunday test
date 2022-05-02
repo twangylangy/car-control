@@ -198,7 +198,8 @@ if __name__ == '__main__':
                     line_image = display_lines(frame, averaged_lines)
                     combined_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
 
-                    # Serial communications with arduino
+                    # Serial communications
+                    # Arduino --> Raspberry Pi
                     arduino_input = ser.readline().decode('utf-8').rstrip()
                     split = arduino_input.split()
                     front_us_input = arduino_input[1]
@@ -231,15 +232,17 @@ if __name__ == '__main__':
                     fuzz_m_response.view(sim=fuzzy_motor)
                     matplotlib.pyplot.show()
                     fuzz_m_output = fuzzy_motor.output['fuzz_m_response']
-                    mapped_output = fuzz_m_output
+                    string_output_2 = str(fuzz_m_output)
 
             else:
                 combined_image = frame
+                string_output_1 = '1'
+                string_output_2 = 3000  # change later
                 
             cv2.imshow('result', combined_image)
 
-            # Arduino
-            string = '2 5647'
+            # Raspberry Pi --> Arduino
+            string = ''.join((string_output_1, ' ', string_output_2))
             ser.write(bytes(string, 'utf-8'))
 
             # Breaks loop when 'q' key is pressed
