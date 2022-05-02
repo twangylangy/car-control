@@ -237,15 +237,24 @@ if __name__ == '__main__':
             except AttributeError:
                 string_output_1 = '1'
                 string_output_2 = '3000'  # change later
-            
-            try:    
+            except NameError:
+                string_output_1 = '1'
+                string_output_2 = '3000'  # change later
+
+            try:
                 cv2.imshow('result', combined_image)
             except NameError:
                 cv2.imshow('result', frame)
 
             # Raspberry Pi --> Arduino
-            string = ''.join((string_output_1, ' ', string_output_2))
-            ser.write(bytes(string, 'utf-8'))
+            try:
+                string = ''.join((string_output_1, ' ', string_output_2))
+                ser.write(bytes(string, 'utf-8'))
+            except NameError:
+                string_output_1 = '1'
+                string_output_2 = '3000'  # change later
+                string = ''.join((string_output_1, ' ', string_output_2))
+                ser.write(bytes(string, 'utf-8'))
 
             # Breaks loop when 'q' key is pressed
             if cv2.waitKey(1) == ord('q'):
