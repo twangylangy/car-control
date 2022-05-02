@@ -1,0 +1,53 @@
+import matplotlib.pyplot
+import numpy as np
+import skfuzzy as fuzz
+from skfuzzy import control as ctrl
+import matplotlib
+
+# antecedent/consequent objects for membership functions and universe variables
+fuzz_m_angle = ctrl.Antecedent(np.arange(0, 101, 1), 'fuzz_m_angle')
+fuzz_distance = ctrl.Antecedent(np.arange(0, 101, 2), 'fuzz_distance')
+fuzz_m_response = ctrl.Consequent(np.arange(0, 100, 1), 'fuzz_m_response')
+
+# manual fuzzy membership function setting
+fuzz_m_angle['minimal'] = fuzz.trimf(fuzz_m_angle.universe, [0, 0, 50])
+fuzz_m_angle['small'] = fuzz.trimf(fuzz_m_angle.universe, [0, 50, 100])
+fuzz_m_angle['large'] = fuzz.trimf(fuzz_m_angle.universe, [50, 100, 100])
+
+fuzz_distance['close'] = fuzz.trimf(fuzz_distance.universe, [0, 0, 50])
+fuzz_distance['middle'] = fuzz.trimf(fuzz_distance.universe, [0, 50, 100])
+fuzz_distance['far'] = fuzz.trimf(fuzz_distance.universe, [50, 100, 100])
+
+fuzz_m_response['slow'] = fuzz.trimf(fuzz_m_response.universe, [0, 0, 50])
+fuzz_m_response['medium'] = fuzz.trimf(fuzz_m_response.universe, [0, 50, 100])
+fuzz_m_response['fast'] = fuzz.trimf(fuzz_m_response.universe, [50, 100, 100])
+
+# viewing membership functions
+fuzz_m_angle['small'].view()
+fuzz_m_response['medium'].view()
+fuzz_distance['far'].view()
+
+# fuzzy control rules
+m_rule1 = ctrl.Rule(fuzz_m_angle['large'] & fuzz_distance['close'], fuzz_m_response['slow'])
+m_rule2 = ctrl.Rule(fuzz_m_angle['small'] & fuzz_distance['close'], fuzz_m_response['slow'])
+m_rule3 = ctrl.Rule(fuzz_m_angle['minimal'] & fuzz_distance['close'], fuzz_m_response['slow'])
+m_rule4 = ctrl.Rule(fuzz_m_angle['large'] & fuzz_distance['middle'], fuzz_m_response['slow'])
+m_rule5 = ctrl.Rule(fuzz_m_angle['small'] & fuzz_distance['middle'], fuzz_m_response['medium'])
+m_rule6 = ctrl.Rule(fuzz_m_angle['minimal'] & fuzz_distance['middle'], fuzz_m_response['medium'])
+m_rule7 = ctrl.Rule(fuzz_m_angle['large'] & fuzz_distance['far'], fuzz_m_response['medium'])
+m_rule8 = ctrl.Rule(fuzz_m_angle['small'] & fuzz_distance['far'], fuzz_m_response['fast'])
+m_rule9 = ctrl.Rule(fuzz_m_angle['minimal'] & fuzz_distance['far'], fuzz_m_response['fast'])
+
+# creating the control system
+motor_ctrl = ctrl.ControlSystem([m_rule1, m_rule2, m_rule3, m_rule4, m_rule5, m_rule6, m_rule7, m_rule8, m_rule9])
+fuzzy_motor = ctrl.ControlSystemSimulation(motor_ctrl)
+
+# computing the output
+fuzzy_motor.input['fuzz_m_angle'] = 20
+fuzzy_motor.input['fuzz_distance'] = 80
+fuzzy_motor.compute()
+
+# viewing the output
+print(fuzzy_motor.output['fuzz_m_response'])
+fuzz_m_response.view(sim=fuzzy_motor)
+matplotlib.pyplot.show()
