@@ -1,0 +1,26 @@
+import RPi.GPIO as GPIO
+from time import sleep
+
+GPIO.setmode(GPIO.BOARD)
+
+GPIO.setup(16, GPIO.OUT)  # Brown cable (enable)
+GPIO.setup(18, GPIO.OUT)  # White cable (control)
+
+p = GPIO.PWM(16, 100)
+p.start(0)
+
+GPIO.output(18, True)  # Forwards direction
+p.ChangeDutyCycle(25)  # 25% PWM
+GPIO.output(16, True)  # Turn on motor
+
+sleep(5)  # Hold code for 5 seconds
+
+GPIO.output(16, False)  # Turn off motor
+GPIO.output(18, False)  # Backwards direction
+p.ChangeDutyCycle(50)  # 50% PWM
+GPIO.output(16, True)  # Turn on motor
+sleep(5)
+
+GPIO.output(16, False)  # Turn off motor
+p.stop()
+GPIO.cleanup()
