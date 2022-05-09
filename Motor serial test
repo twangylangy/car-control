@@ -1,0 +1,48 @@
+import serial
+import time
+import RPi.GPIO as GPIO
+from time import sleep
+import cv2
+
+
+if __name__ == '__main__':
+    ser = serial.Serial('/dev/ttyACM1', 9600, timeout=5)
+    #usb-Arduino__www.arduino.cc__0043_850333132373511011F0-if00
+    #/dev/ttyACM1
+    ser.flush()
+    
+    GPIO.setmode(GPIO.BOARD)
+
+    GPIO.setup(16, GPIO.OUT)  # Brown cable (enable)
+    GPIO.setup(18, GPIO.OUT)  # White cable (control)
+
+    p = GPIO.PWM(18, 100)
+    p.start(0)
+
+    while True:
+        if ser.in_waiting > 0:
+            string = "1 1000 0.1 0 0"
+            #integer = 1
+            #ser.write(integer)
+            
+            ser.write(bytes(string, 'utf-8'))
+            ser.write(b" ")
+            #time.sleep(1)
+            arduino_input = ser.readline().decode('utf-8').rstrip()
+            split = arduino_input.split()
+            print(split)
+            GPIO.output(16, True)  # Forwards direction
+            try:
+                pwm = ((int(split[6]) * -1) + 50)
+            except IndexError:
+                pwm = 50
+            p.ChangeDutyCycle(pwm)  # 25% PWM
+            GPIO.output(18, True)  # Turn on motor
+            if cv2.waitKey(1) == ord('q'):
+                break
+            
+GPIO.output(18, False)  # Turn off motor
+GPIO.output(16, False)  # Turn off motor
+p.stop()
+GPIO.cleanup()
+
