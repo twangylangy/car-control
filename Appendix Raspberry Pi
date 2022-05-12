@@ -1,0 +1,364 @@
+import serial
+import cv2
+import numpy as np
+import math
+import RPi.GPIO as GPIO
+# import matplotlib.pyplot
+import skfuzzy as fuzz
+from skfuzzy import control as ctrl
+# import matplotlib
+from time import sleep
+
+
+def canny(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    canny = cv2.Canny(blur, 50, 150)
+    return canny
+
+
+def region_of_interest(image):
+    height = image.shape[0]
+    polygons = np.array([
+        [(200, height), (1100, height), (500, 250)]  # defines masked area (triangle)
+    ])
+    mask = np.zeros_like(image)
+    cv2.fillPoly(mask, polygons, 255)
+    masked_image = cv2.bitwise_and(image, mask)
+    return masked_image
+
+
+def average_slope_intercept(image, lines):
+    left_fit = []
+    right_fit = []
+    for line in lines:
+        x1, y1, x2, y2 = line.reshape(4)
+        parameters = np.polyfit((x1, x2), (y1, y2), 1)
+        slope = parameters[0]
+        intercept = parameters[1]
+        if slope < 0:
+            left_fit.append((slope, intercept))
+        else:
+            right_fit.append((slope, intercept))
+    left_fit_average = np.average(left_fit, axis=0)
+    right_fit_average = np.average(right_fit, axis=0)
+    #  print(left_fit_average, 'left')
+    #  print(right_fit_average, 'right')
+    left_line = make_coordinates(image, left_fit_average)
+    right_line = make_coordinates(image, right_fit_average)
+    centre_line = centre_get(image, left_line, right_line, left_fit_average, right_fit_average)
+    return np.array([left_line, right_line, centre_line])
+
+
+def centre_get(image, left, right, left_p, right_p):
+    global theta
+    global lane_position_difference
+    global direction
+
+    x1 = int((left[0] + right[0]) / 2)
+    y1 = image.shape[0]
+    A = np.array([[-1 * left_p[0], 1], [-1 * right_p[0], 1]])
+    B = np.array([left_p[1], right_p[1]])
+    inv_a = np.linalg.inv(A)
+    X = np.dot(inv_a, B)
+    x2 = int(X[0])
+    y2 = int(X[1])
+    theta = int(math.degrees(math.atan(abs(x1-x2)/abs(y2-y1))))  # : int with the : directly after theta
+    lane_position_difference = (650 - x1)  # 650 number to be tweaked depending on centre of image
+
+    if (x2 - x1) < 0:
+        direction = -1
+    if (x2 - x1) >= 0:
+        direction = 1
+
+    return np.array([x1, y1, x2, y2])
+
+
+def make_coordinates(image, line_parameters):
+    slope, intercept = line_parameters
+    #  print(image.shape) Prints image size and channels
+    y1 = image.shape[0]
+    y2 = int(y1*(3/5))
+    x1 = int((y1 - intercept)/slope)
+    x2 = int((y2 - intercept) / slope)
+    return np.array([x1, y1, x2, y2])
+
+
+def display_lines(image, lines):
+    line_image = np.zeros_like(image)
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line.reshape(4)
+            cv2.line(line_image, (x1, y1), (x2, y2), (255, 0, 0), 10)
+    return line_image
+
+
+def set_angle(angle):
+    duty = (angle / 18 + 2)
+    GPIO.output(11, True)
+    pwm_servo.ChangeDutyCycle(duty)
+    #sleep(0.5)
+    GPIO.output(11, False)
+    pwm_servo.ChangeDutyCycle(0)
+
+
+if __name__ == '__main__':
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setwarnings(False)
+
+    GPIO.setup(16, GPIO.OUT)  # Brown cable (enable)
+    GPIO.setup(18, GPIO.OUT)  # White cable (control)
+
+    pwm_motor = GPIO.PWM(18, 100)
+    pwm_motor.start(0)
+
+    GPIO.setup(11, GPIO.OUT)  # Yellow cable (control)
+    pwm_servo = GPIO.PWM(11, 70)
+    pwm_servo.start(0)
+
+    while True:
+
+        # Setting up the motor fuzzy logic system
+        # antecedent/consequent objects for membership functions and universe variables
+        fuzz_m_angle = ctrl.Antecedent(np.arange(0, 25, 1), 'fuzz_m_angle')  # magnitude
+        speed_limit = ctrl.Antecedent(np.arange(0, 60, 2), 'speed_limit')
+        fuzz_m_response = ctrl.Consequent(np.arange(1000, 2000, 1), 'fuzz_m_response')
+
+        # manual fuzzy membership function setting
+        fuzz_m_angle['minimal'] = fuzz.trimf(fuzz_m_angle.universe, [0, 0, 12.5])
+        fuzz_m_angle['small'] = fuzz.trimf(fuzz_m_angle.universe, [0, 12.5, 25])
+        fuzz_m_angle['large'] = fuzz.trimf(fuzz_m_angle.universe, [12.5, 25, 25])
+
+        speed_limit['low'] = fuzz.trimf(speed_limit.universe, [0, 0, 30])
+        speed_limit['medium'] = fuzz.trimf(speed_limit.universe, [0, 30, 60])
+        speed_limit['high'] = fuzz.trimf(speed_limit.universe, [30, 60, 60])
+
+        fuzz_m_response['slow'] = fuzz.trimf(fuzz_m_response.universe, [1000, 1000, 1500])
+        fuzz_m_response['medium'] = fuzz.trimf(fuzz_m_response.universe, [1000, 1500, 2000])
+        fuzz_m_response['fast'] = fuzz.trimf(fuzz_m_response.universe, [1500, 2000, 2000])
+
+        # viewing membership functions
+        # fuzz_m_angle['small'].view()
+        # fuzz_m_response['medium'].view()
+        # speed_limit['far'].view()
+
+        # fuzzy control rules
+        m_rule1 = ctrl.Rule(fuzz_m_angle['large'] & speed_limit['high'], fuzz_m_response['slow'])
+        m_rule2 = ctrl.Rule(fuzz_m_angle['small'] & speed_limit['high'], fuzz_m_response['slow'])
+        m_rule3 = ctrl.Rule(fuzz_m_angle['minimal'] & speed_limit['high'], fuzz_m_response['slow'])
+        m_rule4 = ctrl.Rule(fuzz_m_angle['large'] & speed_limit['medium'], fuzz_m_response['slow'])
+        m_rule5 = ctrl.Rule(fuzz_m_angle['small'] & speed_limit['medium'], fuzz_m_response['medium'])
+        m_rule6 = ctrl.Rule(fuzz_m_angle['minimal'] & speed_limit['medium'], fuzz_m_response['medium'])
+        m_rule7 = ctrl.Rule(fuzz_m_angle['large'] & speed_limit['low'], fuzz_m_response['medium'])
+        m_rule8 = ctrl.Rule(fuzz_m_angle['small'] & speed_limit['low'], fuzz_m_response['fast'])
+        m_rule9 = ctrl.Rule(fuzz_m_angle['minimal'] & speed_limit['low'], fuzz_m_response['fast'])
+
+        # creating the control system
+        motor_ctrl = ctrl.ControlSystem(
+            [m_rule1, m_rule2, m_rule3, m_rule4, m_rule5, m_rule6, m_rule7, m_rule8, m_rule9])
+        fuzzy_motor = ctrl.ControlSystemSimulation(motor_ctrl)
+
+        # Setting up the motor fuzzy logic system
+        # antecedent/consequent objects for membership functions and universe variables
+        fuzz_s_angle = ctrl.Antecedent(np.arange(-25, 25, 1), 'fuzz_s_angle')  # +/-
+        fuzz_lane = ctrl.Antecedent(np.arange(-200, 200, 2), 'fuzz_lane')
+        fuzz_s_response = ctrl.Consequent(np.arange(0, 180, 1), 'fuzz_s_response')
+
+        # manual fuzzy membership function setting
+        fuzz_s_angle['left'] = fuzz.trimf(fuzz_s_angle.universe, [-25, -25, 0])
+        fuzz_s_angle['center'] = fuzz.trimf(fuzz_s_angle.universe, [-25, 0, 25])
+        fuzz_s_angle['right'] = fuzz.trimf(fuzz_s_angle.universe, [0, 25, 25])
+
+        fuzz_lane['left'] = fuzz.trimf(fuzz_lane.universe, [-200, -200, 0])
+        fuzz_lane['center'] = fuzz.trimf(fuzz_lane.universe, [-200, 0, 200])
+        fuzz_lane['right'] = fuzz.trimf(fuzz_lane.universe, [0, 200, 200])
+
+        fuzz_s_response['left'] = fuzz.trimf(fuzz_s_response.universe, [0, 0, 90])
+        fuzz_s_response['straight'] = fuzz.trimf(fuzz_s_response.universe, [0, 90, 180])
+        fuzz_s_response['right'] = fuzz.trimf(fuzz_s_response.universe, [90, 180, 180])
+
+        # viewing membership functions
+        # fuzz_s_angle['right'].view()
+        # fuzz_s_response['left'].view()
+        # fuzz_lane['center'].view()
+
+        # fuzzy control rules
+        s_rule1 = ctrl.Rule(fuzz_s_angle['left'] & fuzz_lane['left'], fuzz_s_response['right'])
+        s_rule2 = ctrl.Rule(fuzz_s_angle['center'] & fuzz_lane['left'], fuzz_s_response['right'])
+        s_rule3 = ctrl.Rule(fuzz_s_angle['right'] & fuzz_lane['left'], fuzz_s_response['left'])
+        s_rule4 = ctrl.Rule(fuzz_s_angle['left'] & fuzz_lane['center'], fuzz_s_response['right'])
+        s_rule5 = ctrl.Rule(fuzz_s_angle['center'] & fuzz_lane['center'], fuzz_s_response['straight'])
+        s_rule6 = ctrl.Rule(fuzz_s_angle['right'] & fuzz_lane['center'], fuzz_s_response['left'])
+        s_rule7 = ctrl.Rule(fuzz_s_angle['left'] & fuzz_lane['right'], fuzz_s_response['right'])
+        s_rule8 = ctrl.Rule(fuzz_s_angle['center'] & fuzz_lane['right'], fuzz_s_response['left'])
+        s_rule9 = ctrl.Rule(fuzz_s_angle['right'] & fuzz_lane['right'], fuzz_s_response['left'])
+
+        # creating the control system
+        servo_ctrl = ctrl.ControlSystem(
+            [s_rule1, s_rule2, s_rule3, s_rule4, s_rule5, s_rule6, s_rule7, s_rule8, s_rule9])
+        fuzzy_servo = ctrl.ControlSystemSimulation(servo_ctrl)
+
+        ser = serial.Serial('/dev/ttyACM1', 9600, timeout=1)
+        ser.flush()
+
+        # Setting up the webcam for image capture
+        cap = cv2.VideoCapture(0)
+        cap.set(3, 1280)  # Width
+        cap.set(4, 720)  # Height
+        cap.set(10, 60)  # Brightness
+
+        # Setting up QR code decoder
+        detector = cv2.QRCodeDetector()
+
+        while cap.isOpened():
+            _, frame = cap.read()
+            data, _, _ = detector.detectAndDecode(frame)
+
+            # Lane detection logic (attempts)
+            try:
+                canny_image = canny(frame)
+                cropped_image = region_of_interest(canny_image)
+                lines = cv2.HoughLinesP(cropped_image, 2, np.pi / 180, 100, np.array([]), minLineLength=40,
+                                        maxLineGap=5)
+                if lines is not None:
+                    for line in lines[0]:
+
+                        averaged_lines = average_slope_intercept(frame, lines)
+                        line_image = display_lines(frame, averaged_lines)
+                        combined_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
+
+            except AttributeError:
+                print('AttributeError')
+            except NameError:
+                print('NameError')
+            except TypeError:
+                print('TypeError')
+
+            # Serial communications
+            # Arduino --> Raspberry Pi
+            if ser.in_waiting > 0:
+                try:
+                    arduino_input = ser.readline().decode('utf-8').rstrip()
+                except AttributeError:
+                    arduino_input = '0 100 0 0 1000 0 50'
+                
+                split = arduino_input.split()
+                print(split)
+                front_us_input = int(split[1])
+                front_us_list = []
+                front_us_list.append(front_us_input)
+
+                if len(front_us_list) > 3:
+                    del front_us_list[0]
+                    front_us_average = np.averagefront_us_list
+                else:
+                    front_us_average = 1000
+
+                # Servo fuzzy logic inputs
+                # Fuzzy input: angle error
+                try:
+                    if theta > 25:
+                        theta = 25
+                    if theta < 0:
+                        theta = 0
+                    fuzzy_servo.input['fuzz_s_angle'] = (theta * direction)
+                except NameError:
+                    theta = 0
+                    direction = 1
+                    fuzzy_servo.input['fuzz_s_angle'] = (theta * direction)
+
+                # Fuzzy input: lane position error
+                try:
+                    if lane_position_difference > 200:
+                        lane_position_difference = 200
+                    if lane_position_difference < -200:
+                        lane_position_difference = -200
+                    fuzzy_servo.input['fuzz_lane'] = lane_position_difference
+                except NameError:
+                    lane_position_difference = 0
+                    fuzzy_servo.input['fuzz_lane'] = lane_position_difference
+
+                # Servo fuzzy logic output
+                fuzzy_servo.compute()
+
+                # viewing the output
+                #print(fuzzy_servo.output['fuzz_s_response'])
+                fuzz_s_response.view(sim=fuzzy_servo)
+                # matplotlib.pyplot.show()
+                fuzz_s_output = fuzzy_servo.output['fuzz_s_response']
+
+                # Motor fuzzy logic inputs
+                # Fuzzy input: angle error (magnitude)
+                try:
+                    if theta > 25:
+                        theta = 25
+                    if theta < 0:
+                        theta = 0
+                    fuzzy_motor.input['fuzz_m_angle'] = theta
+                except NameError:
+                    theta = 12.5
+
+                # Fuzzy input: speed limit
+                speed_limit = 30
+                fuzzy_motor.input['speed_limit'] = speed_limit
+
+                # Motor fuzzy logic outputs
+                fuzzy_motor.compute()
+
+                # viewing the output
+                #print(fuzzy_motor.output['fuzz_m_response'])
+                fuzz_m_response.view(sim=fuzzy_motor)
+                # matplotlib.pyplot.show()
+                fuzz_m_output = fuzzy_motor.output['fuzz_m_response']
+                string_output_2 = str(fuzz_m_output)
+
+                # Motor Function
+                # Drive motor
+                GPIO.output(16, True)  # Forwards direction
+                try:
+                    duty_cycle_motor = ((int(split[6]) * -1) + 50)
+                except IndexError:
+                    duty_cycle_motor = 50
+                pwm_motor.ChangeDutyCycle(duty_cycle_motor)  # 25% PWM
+                GPIO.output(18, True)  # Turn on motor
+
+                # Servo motor
+                #set_angle(int(fuzz_s_output))
+
+                try:
+                    cv2.imshow('result', combined_image)
+                except NameError:
+                    cv2.imshow('result', frame)
+
+                # Raspberry Pi --> Arduino
+                string_output_2 = '1000'
+                try:
+                    string_output_1 = '1'
+                    string = ''.join((string_output_1, ' ', string_output_2))
+                    ser.write(bytes(string, 'utf-8'))
+                except NameError:
+                    string_output_1 = '1'
+                    string_output_2 = '1000'  # change later
+                    string = ''.join((string_output_1, ' ', string_output_2))
+                    ser.write(bytes(string, 'utf-8'))
+                
+                # Print
+                print(fuzz_s_output, 'servo angle')
+                print(lane_position_difference, 'lane x error')
+                print((theta * direction), 'angle error')
+                print(fuzz_m_output, 'PID target')
+
+                # Breaks loop when 'q' key is pressed
+                if cv2.waitKey(1) == ord('q'):
+                    break
+            
+        cap.release()
+        cv2.destroyAllWindows()
+
+        set_angle(10)  # Sets servo to 90 degrees
+        GPIO.output(18, False)  # Turn off motor
+        GPIO.output(16, False)  # Turn off motor
+
+        pwm_servo.stop()
+        pwm_motor.stop()
+        GPIO.cleanup()
