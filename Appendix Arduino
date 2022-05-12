@@ -1,0 +1,318 @@
+// C++ code
+
+//Defining Ultrasonic Variables
+int tPA = 2; // Trigger Pin A
+int ePA = 8; // Echo Pin A
+long dA; // duration A
+
+int tPB = 3; // For sensor B
+int ePB = 9;
+long dB;
+
+int tPC = 4; // For sensor c
+int ePC = 10;
+long dC;
+
+int tPD = 7; // For sensor D
+int ePD = 13;
+long dD;
+
+int tPE = 6; // For sensor E
+int ePE = 12;
+long dE;
+
+int tPF = 5; // For sensor F
+int ePF = 11;
+long dF;
+
+String input;
+int retain = 0;
+
+// Defining PID variables
+float Kp = 0.8; // PID constants
+float Kd = 0;
+float Ki = 0;
+int dutyCycle = 0; // Speed variable
+float curError = 0; // Error variables
+float oldError = 0;
+float difError = 0;
+float intError = 0;
+
+//Decoder Variable
+String input_string;
+
+// Define other variables
+int reqTime = 1000;
+float actTime = 0;
+unsigned long tA;
+unsigned long tB;
+
+//--------------------------------------------------------
+
+void setup()
+{
+  Serial.begin (9600);
+
+  pinMode(tPA, OUTPUT);
+  pinMode(ePA, INPUT);
+
+  pinMode(tPB, OUTPUT);
+  pinMode(ePB, INPUT);
+
+  pinMode(tPC, OUTPUT);
+  pinMode(ePC, INPUT);
+
+  pinMode(tPD, OUTPUT);
+  pinMode(ePD, INPUT);
+
+  pinMode(tPE, OUTPUT);
+  pinMode(ePE, INPUT);
+
+  pinMode(tPF, OUTPUT);
+  pinMode(ePF, INPUT);
+
+  // Start pulse counter
+  tA = micros();
+  delay(50);
+}
+
+//--------------------------------------------------------
+
+void loop()
+{
+  if (Serial.available() > 0) {
+    //input_string = Serial.readString();
+    input_string = Serial.readStringUntil('\n');
+    input_string.trim();
+    decode();
+  }
+
+  if (retain == 0) {
+    follow();
+  } else if (retain == 1) {
+    left();
+  } else if (retain == 2) {
+    right();
+  } else {
+    follow();
+  }
+
+  PID();
+  print();
+}
+
+//--------------------------------------------------------
+
+void decode()
+{
+  String strs[20];
+  int StringCount = 0;
+
+  while (input_string.length() > 0)
+  {
+    int index = input_string.indexOf(' ');
+    if (index == -1) // Space not detected
+    {
+      strs[StringCount++] = input_string;
+      break;
+    }
+    else
+    {
+      strs[StringCount++] = input_string.substring(0, index);
+      input_string = input_string.substring(index + 1);
+    }
+  }
+
+  input = strs[0]; //Follow, left & right
+  reqTime = (strs[1].toInt()); //Required time
+  Kp = (strs[2].toFloat());
+  Ki = (strs[3].toFloat());
+  Kd = (strs[4].toFloat());
+
+  if (input == "1") {
+    retain = 0;
+  } else if (input == "2") {
+    retain = 1;
+  } else if (input == "3") {
+    retain = 2;
+  }
+}
+
+//--------------------------------------------------------
+
+void follow()
+{
+  dA = 0;
+  b();
+  dC = 0;
+  dD = 0;
+  e();
+  dF = 0;
+}
+
+void left()
+{
+  dA = 0;
+  b();
+  c();
+  dD = 0;
+  dE = 0;
+  f();
+}
+
+void right()
+{
+  a();
+  b();
+  dC = 0;
+  d();
+  dE = 0;
+  dF = 0;
+}
+
+//--------------------------------------------------------
+
+void a()
+{
+  digitalWrite(tPA, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPA, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPA, LOW);
+  pinMode(ePA, INPUT);
+  dA = pulseIn(ePA, HIGH);
+}
+
+void b()
+{
+  digitalWrite(tPB, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPB, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPB, LOW);
+  pinMode(ePB, INPUT);
+  dB = pulseIn(ePB, HIGH);
+}
+
+void c()
+{
+  digitalWrite(tPC, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPC, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPC, LOW);
+  pinMode(ePC, INPUT);
+  dC = pulseIn(ePC, HIGH);
+}
+
+void d()
+{
+  digitalWrite(tPD, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPD, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPD, LOW);
+  pinMode(ePD, INPUT);
+  dD = pulseIn(ePD, HIGH);
+}
+
+void e()
+{
+  digitalWrite(tPE, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPE, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPE, LOW);
+  pinMode(ePE, INPUT);
+  dE = pulseIn(ePE, HIGH);
+}
+
+void f()
+{
+  digitalWrite(tPF, LOW);
+  delayMicroseconds(5);
+  digitalWrite(tPF, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(tPF, LOW);
+  pinMode(ePF, INPUT);
+  dF = pulseIn(ePF, HIGH);
+}
+
+//--------------------------------------------------------
+
+void PID()
+{
+  // Calculate Time
+  tB = micros();
+  actTime = dB;
+
+  // Calculate errors
+  oldError = curError;
+  curError = reqTime - actTime;
+  difError = (curError - oldError) * 1E3 / (tB - tA);
+  intError += (((curError + oldError) / 2) * (tB - tA) / 1E3);
+
+  // PID controller using variable K values above
+  // Finds time to set from the actual time and errors
+  dutyCycle = Kp * curError + Kd * difError + Ki * intError;
+
+  // Limits time to ultrasonic range
+  if (dutyCycle > 50)
+    dutyCycle = 50;
+  if (dutyCycle < -50)
+    dutyCycle = -50;
+
+  // Printing values for testing
+  /*
+    Serial.print(reqTime);
+    Serial.print(" ");
+    Serial.print(actTime);
+    Serial.print(" ");
+    Serial.print(oldError);
+    Serial.print(" ");
+    Serial.print(curError);
+    Serial.print(" ");
+    Serial.print(difError);
+    Serial.print(" ");
+    Serial.print(intError);
+    Serial.println();
+  */
+  // Reset counters
+  tA = micros();
+  delay(50);
+}
+
+//--------------------------------------------------------
+
+void print()
+{
+  Serial.print(dA);
+  Serial.print(" ");
+  Serial.print(dB);
+  Serial.print(" ");
+  Serial.print(dC);
+  Serial.print(" ");
+  Serial.print(dD);
+  Serial.print(" ");
+  Serial.print(dE);
+  Serial.print(" ");
+  Serial.print(dF);
+  Serial.print(" ");
+  Serial.print(dutyCycle);
+
+  /*
+    Serial.print(" ");
+    Serial.print(input);
+    Serial.print(" ");
+    Serial.print(reqTime);
+    Serial.print(" ");
+    Serial.print(Kp);
+    Serial.print(" ");
+    Serial.print(Ki);
+    Serial.print(" ");
+    Serial.print(Kd);
+  */
+
+  Serial.println();
+  delay(50);
+}
