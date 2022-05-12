@@ -1,0 +1,55 @@
+import serial
+import time
+import RPi.GPIO as GPIO
+from time import sleep
+import cv2
+
+if __name__ == '__main__':
+    ser = serial.Serial('/dev/ttyACM1', 9600, timeout=1)
+    ser.flush()
+    
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(16, GPIO.OUT)  # Brown cable (enable)
+    GPIO.setup(18, GPIO.OUT)  # White cable (control)
+
+    p = GPIO.PWM(18, 100)
+    p.start(0)
+    count =0
+
+    while True:
+        if ser.in_waiting > 0:
+            #Makes square wave PID target
+            if count < 25:
+                string = "1 1000 0.5 0 0"
+            if ((count > 24) & (count < 50)):
+                string = "1 1500 0.5 0 0"
+            if count > 49:
+                string = "1 1000 0.5 0 0"
+            count = count+1
+            
+            ser.write(bytes(string, 'utf-8'))
+            ser.write(b" ")
+
+            arduino_input = ser.readline().decode('utf-8').rstrip()
+            split = arduino_input.split()
+            try:
+                print(int(split[1]), ' ', int(split[6]), ' ', count)
+            except IndexError:
+                print(' ')
+                
+            GPIO.output(16, True)  # Forwards direction
+            try:
+                pwm = ((int(split[6]) * -1) + 50)
+            except IndexError:
+                pwm = 50
+            p.ChangeDutyCycle(pwm)  # 25% PWM
+            GPIO.output(18, True)  # Turn on motor
+            if cv2.waitKey(1) == ord('q'):
+                break
+            
+GPIO.output(18, False)  # Turn off motor
+GPIO.output(16, False)  # Turn off motor
+p.stop()
+GPIO.cleanup()
+
+
